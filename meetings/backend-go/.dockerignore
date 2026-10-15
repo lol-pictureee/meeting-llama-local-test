@@ -1,0 +1,6 @@
+# Артефакты сборки и локальные данные не нужны внутри образа
+*.md
+.git
+.gitignore
+.dockerignore
+frontend-static/*.map

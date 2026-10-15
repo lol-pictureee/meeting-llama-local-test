@@ -1,0 +1,10 @@
+# Python dependencies for Whisper service
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+faster-whisper==1.2.1
+# PyAV must be >= 12.3.0: faster-whisper calls av.open(..., metadata_errors="ignore")
+# 12.3.0 — единственная версия с готовым wheel для python 3.12, остальные собираются из sdist
+av==12.3.0
+pydantic==2.10.4
+python-multipart==0.0.20
+requests==2.32.3

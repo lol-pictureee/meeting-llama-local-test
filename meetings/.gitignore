@@ -1,0 +1,10 @@
+# Настройки окружения (в репозиторий идёт только .env.example)
+.env
+
+# Модели Ollama — 12 ГБ, не коммитим
+ollama-models-local/
+
+# Локальные артефакты
+result*.json
+*.log
+tmp/

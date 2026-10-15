@@ -1,0 +1,98 @@
+services:
+  # ============================================================
+  # Ollama — свой инстанс внутри Docker на порту 11435
+  # (локальный Ollama на 11434 не затрагивается)
+  # ============================================================
+  ollama-service:
+    image: ollama/ollama:latest
+    container_name: meetings-ollama
+    ports:
+      - "${OLLAMA_HOST_PORT:-11435}:11434"
+    volumes:
+      # Локальная копия моделей (gemma4:12b уже скачана — повторно не качаем).
+      # Хост-каталог ./ollama-models-local монтируется как хранилище моделей Ollama.
+      - ./ollama-models-local:/root/.ollama/models
+    environment:
+      - OLLAMA_KEEP_ALIVE=30m
+      - OLLAMA_NUM_PARALLEL=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  # ============================================================
+  # Go Backend — HTTP API + Web UI
+  # ============================================================
+  web:
+    build:
+      context: ./backend-go
+      dockerfile: Dockerfile
+    depends_on:
+      whisper-service:
+        condition: service_healthy
+      ollama-service:
+        condition: service_started
+    ports:
+      - "${GO_BACKEND_PORT:-8080}:8080"
+    volumes:
+      - uploads:/data/uploads
+      - exports:/data/exports
+      - db-data:/data
+    environment:
+      - GO_BACKEND_PORT=8080
+      - GO_DB_PATH=/data/meetings.db
+      - GO_UPLOADS_DIR=/data/uploads
+      - GO_EXPORTS_DIR=/data/exports
+      - FRONTEND_STATIC_DIR=/app/frontend-static
+      # Whisper по внутренней сети Docker
+      - WHISPER_HOST=whisper-service
+      - WHISPER_PORT=8081
+      # Ollama — тоже по внутренней сети Docker, внутриконтейнерный порт 11434
+      - OLLAMA_HOST=ollama-service
+      - OLLAMA_PORT=11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:12b}
+      - AUDIO_TIMEOUT_SECONDS=${AUDIO_TIMEOUT_SECONDS:-1800}
+      - ANALYSIS_TIMEOUT_SECONDS=${ANALYSIS_TIMEOUT_SECONDS:-900}
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-200}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================
+  # Python Whisper Service — локальное распознавание речи
+  # ============================================================
+  whisper-service:
+    build:
+      context: ./backend-python
+      dockerfile: Dockerfile
+    volumes:
+      - whisper-models:/models
+      - whisper-cache:/root/.cache/huggingface
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_CPU_MODE=${WHISPER_CPU_MODE:-true}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+      - WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-}
+      - WHISPER_BEAM_SIZE=${WHISPER_BEAM_SIZE:-5}
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+volumes:
+  uploads:
+  exports:
+  db-data:
+  whisper-models:
+  whisper-cache:
